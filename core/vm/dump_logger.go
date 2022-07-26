@@ -238,6 +238,9 @@ func (l *ParityLogger) CaptureExit(output []byte, gasUsed uint64, err error) {
 }
 
 func ReceiptDumpLogger(blockNumber uint64, perFolder, perFile uint64, receipts types.Receipts) error {
+	defer func(start time.Time) {
+		fmt.Printf("Dump receipt, block_number = %v ,cost time = %v\n", strconv.FormatUint(blockNumber, 10), time.Since(start))
+	}(time.Now())
 	file, err := getFile("receipts", blockNumber, perFolder, perFile)
 	if err != nil {
 		return err
@@ -330,6 +333,9 @@ func (t *TxLogger) Close() error {
 }
 
 func BlockDumpLogger(block *types.Block, perFolder, perFile uint64) error {
+	defer func(start time.Time) {
+		fmt.Printf("Dump blocks, block_number = %v ,cost time = %v\n", strconv.FormatUint(block.NumberU64(), 10), time.Since(start))
+	}(time.Now())
 	file, err := getFile("blocks", block.NumberU64(), perFolder, perFile)
 	if err != nil {
 		return err
