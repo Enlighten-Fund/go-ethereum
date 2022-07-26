@@ -89,6 +89,7 @@ type ParityLogContext struct {
 
 type ParityLogger struct {
 	context           *ParityLogContext
+	sb                *strings.Builder
 	encoder           *json.Encoder
 	activePrecompiles []common.Address
 	file              *os.File
@@ -104,7 +105,8 @@ func NewParityLogger(ctx *ParityLogContext, blockNumber uint64, perFolder, perFi
 		return nil, err
 	}
 
-	l := &ParityLogger{context: ctx, encoder: json.NewEncoder(file), file: file}
+	sb := &strings.Builder{}
+	l := &ParityLogger{context: ctx, sb: sb, encoder: json.NewEncoder(sb), file: file}
 	if l.context == nil {
 		l.context = &ParityLogContext{}
 	}
@@ -112,6 +114,9 @@ func NewParityLogger(ctx *ParityLogContext, blockNumber uint64, perFolder, perFi
 }
 
 func (l *ParityLogger) Close() error {
+	if _, err := l.file.WriteString(l.sb.String()); err != nil {
+		return err
+	}
 	return l.file.Close()
 }
 
@@ -238,7 +243,8 @@ func ReceiptDumpLogger(blockNumber uint64, perFolder, perFile uint64, receipts t
 		return err
 	}
 
-	encoder := json.NewEncoder(file)
+	sb := &strings.Builder{}
+	encoder := json.NewEncoder(sb)
 	for _, receipt := range receipts {
 		for _, log := range receipt.Logs {
 			err := encoder.Encode(log)
@@ -247,12 +253,16 @@ func ReceiptDumpLogger(blockNumber uint64, perFolder, perFile uint64, receipts t
 			}
 		}
 	}
+	if _, err := file.WriteString(sb.String()); err != nil {
+		return err
+	}
 	return nil
 }
 
 type TxLogger struct {
 	blockNumber uint64
 	blockHash   common.Hash
+	sb          *strings.Builder
 	file        *os.File
 	encoder     *json.Encoder
 	signer      types.Signer
@@ -265,10 +275,12 @@ func NewTxLogger(signer types.Signer, isLondon bool, baseFee *big.Int, blockHash
 	if err != nil {
 		return nil, err
 	}
+	sb := &strings.Builder{}
 	return &TxLogger{
 		blockNumber: blockNumber,
 		blockHash:   blockHash,
 		file:        file,
+		sb:          sb,
 		encoder:     json.NewEncoder(file),
 		signer:      signer,
 		isLondon:    isLondon,
@@ -311,6 +323,9 @@ func (t *TxLogger) Dump(index int, tx *types.Transaction, receipt *types.Receipt
 }
 
 func (t *TxLogger) Close() error {
+	if _, err := t.file.WriteString(t.sb.String()); err != nil {
+		return err
+	}
 	return t.file.Close()
 }
 
