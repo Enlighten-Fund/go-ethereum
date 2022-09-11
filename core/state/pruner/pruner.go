@@ -66,9 +66,9 @@ var (
 // Pruner is an offline tool to prune the stale state with the
 // help of the snapshot. The workflow of pruner is very simple:
 //
-// - iterate the snapshot, reconstruct the relevant state
-// - iterate the database, delete all other state entries which
-//   don't belong to the target state and the genesis state
+//   - iterate the snapshot, reconstruct the relevant state
+//   - iterate the database, delete all other state entries which
+//     don't belong to the target state and the genesis state
 //
 // It can take several hours(around 2 hours for mainnet) to finish
 // the whole pruning work. It's recommended to run this offline tool
@@ -410,7 +410,7 @@ func extractGenesis(db ethdb.Database, stateBloom *stateBloom) error {
 	if genesis == nil {
 		return errors.New("missing genesis block")
 	}
-	t, err := trie.NewSecure(common.Hash{}, genesis.Root(), trie.NewDatabase(db))
+	t, err := trie.NewStateTrie(common.Hash{}, genesis.Root(), trie.NewDatabase(db))
 	if err != nil {
 		return err
 	}
@@ -430,7 +430,7 @@ func extractGenesis(db ethdb.Database, stateBloom *stateBloom) error {
 				return err
 			}
 			if acc.Root != emptyRoot {
-				storageTrie, err := trie.NewSecure(common.BytesToHash(accIter.LeafKey()), acc.Root, trie.NewDatabase(db))
+				storageTrie, err := trie.NewStateTrie(common.BytesToHash(accIter.LeafKey()), acc.Root, trie.NewDatabase(db))
 				if err != nil {
 					return err
 				}

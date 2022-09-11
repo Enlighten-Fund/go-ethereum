@@ -28,7 +28,6 @@ import (
 	"github.com/ethereum/go-ethereum/consensus/ethash"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/beacon"
-	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth"
@@ -51,10 +50,9 @@ var (
 )
 
 func generatePreMergeChain(n int) (*core.Genesis, []*types.Block) {
-	db := rawdb.NewMemoryDatabase()
-	config := params.AllEthashProtocolChanges
+	config := *params.AllEthashProtocolChanges
 	genesis := &core.Genesis{
-		Config:     config,
+		Config:     &config,
 		Alloc:      core.GenesisAlloc{testAddr: {Balance: testBalance}},
 		ExtraData:  []byte("test genesis"),
 		Timestamp:  9000,
@@ -65,13 +63,11 @@ func generatePreMergeChain(n int) (*core.Genesis, []*types.Block) {
 	generate := func(i int, g *core.BlockGen) {
 		g.OffsetTime(5)
 		g.SetExtra([]byte("test"))
-		tx, _ := types.SignTx(types.NewTransaction(testNonce, common.HexToAddress("0x9a9070028361F7AAbeB3f2F2Dc07F82C4a98A02a"), big.NewInt(1), params.TxGas, big.NewInt(params.InitialBaseFee*2), nil), types.LatestSigner(config), testKey)
+		tx, _ := types.SignTx(types.NewTransaction(testNonce, common.HexToAddress("0x9a9070028361F7AAbeB3f2F2Dc07F82C4a98A02a"), big.NewInt(1), params.TxGas, big.NewInt(params.InitialBaseFee*2), nil), types.LatestSigner(&config), testKey)
 		g.AddTx(tx)
 		testNonce++
 	}
-	gblock := genesis.ToBlock(db)
-	engine := ethash.NewFaker()
-	blocks, _ := core.GenerateChain(config, gblock, engine, db, n, generate)
+	_, blocks, _ := core.GenerateChainWithGenesis(genesis, ethash.NewFaker(), n, generate)
 	totalDifficulty := big.NewInt(0)
 	for _, b := range blocks {
 		totalDifficulty.Add(totalDifficulty, b.Difficulty())
@@ -403,7 +399,7 @@ func startEthService(t *testing.T, genesis *core.Genesis, blocks []*types.Block)
 		t.Fatal("can't create node:", err)
 	}
 
-	ethcfg := &ethconfig.Config{Genesis: genesis, Ethash: ethash.Config{PowMode: ethash.ModeFake}, SyncMode: downloader.SnapSync, TrieTimeout: time.Minute, TrieDirtyCache: 256, TrieCleanCache: 256}
+	ethcfg := &ethconfig.Config{Genesis: genesis, Ethash: ethash.Config{PowMode: ethash.ModeFake}, SyncMode: downloader.FullSync, TrieTimeout: time.Minute, TrieDirtyCache: 256, TrieCleanCache: 256}
 	ethservice, err := eth.New(n, ethcfg)
 	if err != nil {
 		t.Fatal("can't create eth service:", err)
@@ -523,18 +519,18 @@ func TestExchangeTransitionConfig(t *testing.T) {
 TestNewPayloadOnInvalidChain sets up a valid chain and tries to feed blocks
 from an invalid chain to test if latestValidHash (LVH) works correctly.
 
-We set up the following chain where P1 ... Pn and P1'' are valid while
+We set up the following chain where P1 ... Pn and P1” are valid while
 P1' is invalid.
 We expect
 (1) The LVH to point to the current inserted payload if it was valid.
 (2) The LVH to point to the valid parent on an invalid payload (if the parent is available).
 (3) If the parent is unavailable, the LVH should not be set.
 
-CommonAncestor◄─▲── P1 ◄── P2  ◄─ P3  ◄─ ... ◄─ Pn
-				│
-				└── P1' ◄─ P2' ◄─ P3' ◄─ ... ◄─ Pn'
-				│
-				└── P1''
+	CommonAncestor◄─▲── P1 ◄── P2  ◄─ P3  ◄─ ... ◄─ Pn
+	                │
+	                └── P1' ◄─ P2' ◄─ P3' ◄─ ... ◄─ Pn'
+	                │
+	                └── P1''
 */
 func TestNewPayloadOnInvalidChain(t *testing.T) {
 	genesis, preMergeBlocks := generatePreMergeChain(10)
@@ -662,8 +658,8 @@ func TestEmptyBlocks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if status.Status != beacon.ACCEPTED {
-		t.Errorf("invalid status: expected ACCEPTED got: %v", status.Status)
+	if status.Status != beacon.SYNCING {
+		t.Errorf("invalid status: expected SYNCING got: %v", status.Status)
 	}
 	if status.LatestValidHash != nil {
 		t.Fatalf("invalid LVH: got %v wanted nil", status.LatestValidHash)
@@ -773,8 +769,8 @@ func TestTrickRemoteBlockCache(t *testing.T) {
 		if err != nil {
 			panic(err)
 		}
-		if status.Status == beacon.INVALID {
-			panic("success")
+		if status.Status == beacon.VALID {
+			t.Error("invalid status: VALID on an invalid chain")
 		}
 		// Now reorg to the head of the invalid chain
 		resp, err := apiB.ForkchoiceUpdatedV1(beacon.ForkchoiceStateV1{HeadBlockHash: payload.BlockHash, SafeBlockHash: payload.BlockHash, FinalizedBlockHash: payload.ParentHash}, nil)
@@ -782,7 +778,7 @@ func TestTrickRemoteBlockCache(t *testing.T) {
 			t.Fatal(err)
 		}
 		if resp.PayloadStatus.Status == beacon.VALID {
-			t.Errorf("invalid status: expected INVALID got: %v", resp.PayloadStatus.Status)
+			t.Error("invalid status: VALID on an invalid chain")
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
