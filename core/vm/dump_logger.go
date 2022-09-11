@@ -19,14 +19,15 @@ package vm
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/core/types"
 	"math/big"
 	"os"
 	"path"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/ethereum/go-ethereum/common"
 )
@@ -88,6 +89,7 @@ type ParityLogContext struct {
 
 type ParityLogger struct {
 	context           *ParityLogContext
+	sb                *strings.Builder
 	encoder           *json.Encoder
 	activePrecompiles []common.Address
 	file              *os.File
@@ -103,7 +105,8 @@ func NewParityLogger(ctx *ParityLogContext, blockNumber uint64, perFolder, perFi
 		return nil, err
 	}
 
-	l := &ParityLogger{context: ctx, encoder: json.NewEncoder(file), file: file}
+	sb := &strings.Builder{}
+	l := &ParityLogger{context: ctx, sb: sb, encoder: json.NewEncoder(sb), file: file}
 	if l.context == nil {
 		l.context = &ParityLogContext{}
 	}
@@ -111,11 +114,15 @@ func NewParityLogger(ctx *ParityLogContext, blockNumber uint64, perFolder, perFi
 }
 
 func (l *ParityLogger) Close() error {
+	if _, err := l.file.WriteString(l.sb.String()); err != nil {
+		return err
+	}
 	return l.file.Close()
 }
 
 func (l *ParityLogger) CaptureStart(env *EVM, from, to common.Address, create bool, input []byte, gas uint64, value *big.Int) {
-	rules := env.ChainConfig().Rules(env.Context.BlockNumber)
+	//rules := env.ChainConfig().Rules(env.Context.BlockNumber)
+	rules := env.ChainConfig().Rules(env.Context.BlockNumber, env.Context.Random != nil)
 	l.activePrecompiles = ActivePrecompiles(rules)
 	l.stack = make([]*ParityTraceItem, 0, 20)
 	l.items = make([]*ParityTraceItem, 0, 20)
@@ -124,6 +131,12 @@ func (l *ParityLogger) CaptureStart(env *EVM, from, to common.Address, create bo
 	} else {
 		l.CaptureEnter(CALL, from, to, input, gas, value)
 	}
+}
+
+func (l *ParityLogger) CaptureTxStart(gasLimit uint64) {
+}
+
+func (l *ParityLogger) CaptureTxEnd(restGas uint64) {
 }
 
 func (l *ParityLogger) CaptureFault(uint64, OpCode, uint64, uint64, *ScopeContext, int, error) {
@@ -225,12 +238,16 @@ func (l *ParityLogger) CaptureExit(output []byte, gasUsed uint64, err error) {
 }
 
 func ReceiptDumpLogger(blockNumber uint64, perFolder, perFile uint64, receipts types.Receipts) error {
+	defer func(start time.Time) {
+		fmt.Printf("Dump receipt, block_number = %v ,cost time = %v\n", strconv.FormatUint(blockNumber, 10), time.Since(start))
+	}(time.Now())
 	file, err := getFile("receipts", blockNumber, perFolder, perFile)
 	if err != nil {
 		return err
 	}
 
-	encoder := json.NewEncoder(file)
+	sb := &strings.Builder{}
+	encoder := json.NewEncoder(sb)
 	for _, receipt := range receipts {
 		for _, log := range receipt.Logs {
 			err := encoder.Encode(log)
@@ -239,12 +256,16 @@ func ReceiptDumpLogger(blockNumber uint64, perFolder, perFile uint64, receipts t
 			}
 		}
 	}
+	if _, err := file.WriteString(sb.String()); err != nil {
+		return err
+	}
 	return nil
 }
 
 type TxLogger struct {
 	blockNumber uint64
 	blockHash   common.Hash
+	sb          *strings.Builder
 	file        *os.File
 	encoder     *json.Encoder
 	signer      types.Signer
@@ -257,10 +278,12 @@ func NewTxLogger(signer types.Signer, isLondon bool, baseFee *big.Int, blockHash
 	if err != nil {
 		return nil, err
 	}
+	sb := &strings.Builder{}
 	return &TxLogger{
 		blockNumber: blockNumber,
 		blockHash:   blockHash,
 		file:        file,
+		sb:          sb,
 		encoder:     json.NewEncoder(file),
 		signer:      signer,
 		isLondon:    isLondon,
@@ -294,6 +317,7 @@ func (t *TxLogger) Dump(index int, tx *types.Transaction, receipt *types.Receipt
 		"effectiveGasPrice": effectiveGasPrice,
 		"type":              tx.Type(),
 		"value":             tx.Value(),
+		"status":            receipt.Status,
 	}
 	if err := t.encoder.Encode(entry); err != nil {
 		return fmt.Errorf("failed to encode transaction entry %w", err)
@@ -302,10 +326,16 @@ func (t *TxLogger) Dump(index int, tx *types.Transaction, receipt *types.Receipt
 }
 
 func (t *TxLogger) Close() error {
+	if _, err := t.file.WriteString(t.sb.String()); err != nil {
+		return err
+	}
 	return t.file.Close()
 }
 
 func BlockDumpLogger(block *types.Block, perFolder, perFile uint64) error {
+	defer func(start time.Time) {
+		fmt.Printf("Dump blocks, block_number = %v ,cost time = %v\n", strconv.FormatUint(block.NumberU64(), 10), time.Since(start))
+	}(time.Now())
 	file, err := getFile("blocks", block.NumberU64(), perFolder, perFile)
 	if err != nil {
 		return err
