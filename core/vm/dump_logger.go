@@ -284,7 +284,7 @@ func NewTxLogger(signer types.Signer, isLondon bool, baseFee *big.Int, blockHash
 		blockHash:   blockHash,
 		file:        file,
 		sb:          sb,
-		encoder:     json.NewEncoder(file),
+		encoder:     json.NewEncoder(sb),
 		signer:      signer,
 		isLondon:    isLondon,
 		baseFee:     baseFee,
