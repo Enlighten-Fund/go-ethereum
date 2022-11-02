@@ -226,15 +226,6 @@ func (l *ParityLogger) CaptureExit(output []byte, gasUsed uint64, err error) {
 		current.Error = err.Error()
 	}
 	l.stack = l.stack[0 : len(l.stack)-1]
-
-	// remove precompiled call
-	if l.isPrecompiled(current.Action.To) {
-		s := len(l.items)
-		l.items = l.items[0 : s-1]
-		if s > 1 {
-			l.items[s-2].Subtraces -= 1
-		}
-	}
 }
 
 func ReceiptDumpLogger(blockNumber uint64, perFolder, perFile uint64, receipts types.Receipts) error {
